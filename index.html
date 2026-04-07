@@ -704,7 +704,6 @@ html,body{height:100%;font-family:var(--font);font-size:14px;
 <div id="print-template" style="display:none;"></div>
 <input type="file" id="import-file" accept=".json" style="display:none">
 <div id="toast-container"></div>
-
 <script>
 /* ═══════════════════════════════════════════════════════════
    TRAZABILIDAD DE ENFERMERÍA — data.js v2
@@ -723,9 +722,18 @@ const HOSPITAL_ZONES = [
 ];
 
 /* ─── ROLES ─── */
-const ROLES = ['EU Jefe de Turno','Enfermero/a Universitario','TENS','Médico Tratante','Residente'];
+const ROLES = ['EU Jefe de Turno','Enfermero/a','Interno/a Universitario','TENS','Médico Tratante','Residente'];
 
-/* ─── TURNOS: 08:00–20:00 y 20:00–08:00 ─── */
+/* ─── ZONAS CON PERSISTENCIA ─── */
+function getZones(){
+  const saved = sGet('enf_v2_zones', null);
+  return saved || HOSPITAL_ZONES;
+}
+function saveZones(zones){ sSet('enf_v2_zones', zones); }
+function addZone(zone){ const z=getZones(); z.push(zone); saveZones(z); }
+function updateZone(idx, zone){ const z=getZones(); z[idx]=zone; saveZones(z); }
+function deleteZone(idx){ const z=getZones(); z.splice(idx,1); saveZones(z); }
+
 function detectShift() {
   const h = new Date().getHours();
   return (h >= 8 && h < 20) ? 'DIA' : 'NOCHE';
@@ -1079,6 +1087,7 @@ function renderSidebar(activeView, filter, zoneId){
     {id:'pendientes',icon:'☐',label:'Pendientes del turno', badge:conPend, badgeCls:'sb-a'},
     {id:'evoluciones',icon:'✎',label:'Evoluciones del turno'},
     {id:'historico',icon:'⏱',label:'Vista histórica'},
+    {id:'zonas',icon:'⚙',label:'Gestionar zonas'},
   ];
   const filters=[
     {id:'todos',label:'Todos los pacientes'},
@@ -1107,29 +1116,34 @@ function renderSidebar(activeView, filter, zoneId){
 
     <div class="s-divider"></div>
     <div class="s-section">Estado actual</div>
-    <div class="s-item" onclick="APP.setFilter('alertas')">
+    <div class="s-item ${filter==='alertas'?'active':''}" onclick="APP.setFilter('alertas')">
       <span class="s-icon" style="color:var(--r)">${counts.alerta>0?'●':'○'}</span>
       <span class="s-label">En alerta</span>
       <span class="s-badge sb-r">${counts.alerta}</span>
     </div>
-    <div class="s-item" onclick="APP.setFilter('todos')">
+    <div class="s-item ${filter==='obs'?'active':''}" onclick="APP.setFilter('obs')">
       <span class="s-icon" style="color:var(--a)">●</span>
       <span class="s-label">Observación</span>
       <span class="s-badge sb-a">${counts.obs}</span>
     </div>
-    <div class="s-item" onclick="APP.setFilter('todos')">
+    <div class="s-item ${filter==='ok'?'active':''}" onclick="APP.setFilter('ok')">
       <span class="s-icon" style="color:var(--g)">●</span>
       <span class="s-label">Estables</span>
       <span class="s-badge sb-g">${counts.ok}</span>
     </div>
-    <div class="s-item">
+    <div class="s-item ${filter==='libre'?'active':''}" onclick="APP.setFilter('libre')">
       <span class="s-icon" style="color:#94A3B8">○</span>
       <span class="s-label">Camas libres</span>
       <span class="s-badge sb-gr">${counts.libre}</span>
     </div>
 
     <div class="s-divider"></div>
-    <div class="s-section">Filtros</div>
+    <div class="s-section">Filtros rápidos</div>
+    ${(filter||'todos')!=='todos'?`
+    <div class="s-item" onclick="APP.setFilter('todos')" style="color:#60A5FA;background:rgba(59,130,246,0.08);border-radius:8px">
+      <span class="s-icon">✕</span>
+      <span class="s-label">Limpiar filtro activo</span>
+    </div>`:''}
     ${filters.map(f=>`
       <div class="s-item ${(filter||'todos')===f.id?'active':''}" onclick="APP.setFilter('${f.id}')">
         <span class="s-icon">◈</span>
@@ -1221,6 +1235,12 @@ function renderBedsView(filter, zoneId){
     ));
   } else if(filter==='alertas'){
     pts=pts.filter(p=>p.estado==='alerta');
+  } else if(filter==='obs'){
+    pts=pts.filter(p=>p.estado==='obs');
+  } else if(filter==='ok'){
+    pts=pts.filter(p=>p.estado==='ok');
+  } else if(filter==='libre'){
+    pts=pts.filter(p=>p.estado==='libre');
   } else if(filter==='criticos'){
     pts=pts.filter(p=>p.estado!=='libre'&&(p.examenes||[]).some(e=>e.estado==='critico'));
   }
@@ -1702,6 +1722,51 @@ function toast(msg,type='ok'){
 /* ══════════════════════════════════════════════════ UTILS */
 function esc(s){ if(!s)return''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
+/* ══════════════════════════════════════════ GESTIÓN DE ZONAS */
+function renderZonasView(){
+  const zones = getZones();
+  return`
+    <div class="view-hdr">
+      <div><div class="view-title">Gestionar zonas del hospital</div>
+      <div class="view-sub">Configura las áreas y sus camas — se guarda automáticamente</div></div>
+      <button class="btn-pri" onclick="APP.addZona()">+ Nueva zona</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      ${zones.map((z,i)=>i===0?'':renderZonaCard(z,i)).join('')}
+    </div>
+    <div style="background:var(--b-bg);border:1px solid var(--b-bd);border-radius:10px;padding:14px 16px;margin-top:16px">
+      <div style="font-size:12px;font-weight:600;color:var(--b-tx);margin-bottom:6px">¿Cómo funciona?</div>
+      <div style="font-size:12px;color:var(--b-tx);line-height:1.7">
+        Cada zona agrupa un conjunto de camas de un ala o piso del hospital.<br>
+        Las camas se identifican por número (ej: 101, 102) separadas por comas.<br>
+        Al seleccionar una zona en el menú lateral, la vista de camas filtra solo esas camas.<br>
+        Al ingresar pacientes, el número de cama debe coincidir con los definidos aquí.
+      </div>
+    </div>`;
+}
+
+function renderZonaCard(z, idx){
+  return`
+    <div style="background:#fff;border:1px solid var(--card-border);border-radius:var(--card-radius);box-shadow:var(--card-shadow);padding:16px">
+      <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+        <div style="flex:1;min-width:200px">
+          <div style="font-size:14px;font-weight:700;color:var(--tx-primary);margin-bottom:4px">${esc(z.name)}</div>
+          <div style="font-size:12px;color:var(--tx-muted)">ID: ${z.id}</div>
+        </div>
+        <div style="flex:2;min-width:200px">
+          <div style="font-size:11px;font-weight:600;color:var(--tx-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Camas (${z.camas.length})</div>
+          <div style="display:flex;flex-wrap:wrap;gap:5px">
+            ${z.camas.map(c=>`<span style="font-size:11px;font-weight:600;padding:3px 8px;background:var(--gr-bg);border:1px solid var(--gr-bd);border-radius:6px;color:var(--tx-mid)">${c}</span>`).join('')}
+          </div>
+        </div>
+        <div style="display:flex;gap:7px;flex-shrink:0">
+          <button class="btn-add" onclick="APP.editZona(${idx})" style="font-size:12px">Editar</button>
+          <button class="btn-add" onclick="APP.deleteZona(${idx})" style="color:var(--r);border-color:var(--r-bd);font-size:12px">Eliminar</button>
+        </div>
+      </div>
+    </div>`;
+}
+
 /* ═══════════════════════════════════════════════════════════
    TRAZABILIDAD DE ENFERMERÍA — app.js v2
    Lógica principal corregida completamente
@@ -1829,6 +1894,7 @@ const APP = {
       case 'pendientes':  m.innerHTML = renderPendientesView(); break;
       case 'evoluciones': m.innerHTML = renderEvolucionesView(); break;
       case 'historico':   m.innerHTML = renderHistoricoView(this.histFilter); break;
+      case 'zonas':       m.innerHTML = renderZonasView(); break;
     }
   },
 
@@ -1906,7 +1972,45 @@ const APP = {
     toast('Guardado correctamente ✓');
   },
 
-  /* ══════════════════════════════════════════════ ALTA */
+  /* ══════════════════════════════════════════ GESTIÓN DE ZONAS */
+  addZona(){
+    const name = prompt('Nombre de la zona:\n(Ej: Cardiología — Piso 6)'); if(!name) return;
+    const camasStr = prompt('Números de camas separados por coma:\n(Ej: 601, 602, 603, 604)'); if(!camasStr) return;
+    const camas = camasStr.split(',').map(c=>c.trim()).filter(Boolean);
+    const id = 'zona-'+Date.now().toString(36);
+    addZone({ id, name, camas });
+    this.render();
+    toast(`Zona "${name}" creada con ${camas.length} camas`);
+  },
+
+  editZona(idx){
+    const zones = getZones();
+    const z = zones[idx]; if(!z) return;
+    const name = prompt('Nombre de la zona:', z.name); if(name===null) return;
+    const camasStr = prompt('Camas (separadas por coma):', z.camas.join(', ')); if(camasStr===null) return;
+    const camas = camasStr.split(',').map(c=>c.trim()).filter(Boolean);
+    updateZone(idx, { ...z, name: name||z.name, camas });
+    // Actualizar zona seleccionada en config si cambió
+    const cfg=getCfg();
+    if(cfg.zoneId===z.id){ cfg.zoneId=z.id; saveCfg(cfg); }
+    this.render();
+    toast('Zona actualizada');
+  },
+
+  deleteZona(idx){
+    const zones = getZones();
+    const z = zones[idx]; if(!z) return;
+    if(z.id==='all'){ toast('No se puede eliminar la zona "Todas las zonas"','warn'); return; }
+    if(!confirm(`¿Eliminar la zona "${z.name}"?\nLas camas y pacientes no se eliminan.`)) return;
+    deleteZone(idx);
+    // Si era la zona activa, resetear a 'all'
+    const cfg=getCfg();
+    if(cfg.zoneId===z.id){ cfg.zoneId='all'; this.zoneId='all'; saveCfg(cfg); }
+    this.render();
+    toast(`Zona "${z.name}" eliminada`,'warn');
+  },
+
+  /* ══════════════════════════════════════════════════ ALTA */
   dischargePatient(cama) {
     if (!confirm(`¿Confirmar alta del paciente de la cama ${cama}?`)) return;
     const fresh = emptyPatient(cama);
@@ -2198,6 +2302,4 @@ const APP = {
 
 /* ──────────────────────────────────────────────────── BOOT */
 document.addEventListener('DOMContentLoaded', () => APP.init());
-</script>
-</body>
-</html>
+</script></body></html>
