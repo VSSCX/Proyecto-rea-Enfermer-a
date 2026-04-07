@@ -18,6 +18,27 @@ const APP = {
     this.render();
     this.bindGlobalEvents();
     this.startTimers();
+    this.handleResize();
+    window.addEventListener('resize', () => this.handleResize());
+  },
+
+  /* ─── RESPONSIVE: sidebar mobile toggle ─── */
+  toggleSidebar() {
+    const sidebar  = document.getElementById('sidebar');
+    const overlay  = document.getElementById('sidebar-overlay');
+    const isOpen   = sidebar.classList.contains('open');
+    if (isOpen) { this.closeSidebar(); }
+    else {
+      sidebar.classList.add('open');
+      overlay.classList.add('visible');
+    }
+  },
+  closeSidebar() {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebar-overlay').classList.remove('visible');
+  },
+  handleResize() {
+    if (window.innerWidth > 1024) { this.closeSidebar(); }
   },
 
   /* ─── CONFIG LOAD ─── */
@@ -91,6 +112,7 @@ const APP = {
   setView(view) {
     this.currentView = view;
     this.currentFilter = 'todos';
+    this.closeSidebar();
     this.render();
   },
 
